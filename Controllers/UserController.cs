@@ -7,7 +7,7 @@ public class UserController : Controller
 {
 
     [HttpPost]
-    public IActionResult Create([FromForm] string username, [FromForm] string password, [FromForm] string role)
+    public IActionResult Create([FromForm] string username, [FromForm] string password)
     {
         using (var connection = DatabaseConnector.CreateNewConnection())
         {
@@ -27,13 +27,12 @@ public class UserController : Controller
             string salt = PasswordManager.GenerateSalt();
             string hashedPassword = PasswordManager.GeneratePasswordHash(password, salt);
 
-            string insertSql = "INSERT INTO User (Username, PasswordHash, PasswordSalt, Role) VALUES (@Username, @PasswordHash, @PasswordSalt, @Role)";
+            string insertSql = "INSERT INTO User (Username, PasswordHash, PasswordSalt) VALUES (@Username, @PasswordHash, @PasswordSalt)";
             using (SQLiteCommand cmd = new SQLiteCommand(insertSql, connection))
             {
                 cmd.Parameters.AddWithValue("@Username", username);
                 cmd.Parameters.AddWithValue("@PasswordHash", hashedPassword);
                 cmd.Parameters.AddWithValue("@PasswordSalt", salt);
-                cmd.Parameters.AddWithValue("@Role", role);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -45,7 +44,6 @@ public class UserController : Controller
     public IActionResult Login([FromForm] string username, [FromForm] string password)
     {
         Int64 userID = -1;
-        string? role = null;
 
         // Csak az olvasásra használjuk a DB kapcsolatot, majd bezárjuk
         using (SQLiteConnection connection = DatabaseConnector.CreateNewConnection())
@@ -64,24 +62,24 @@ public class UserController : Controller
             }
             if (userID == -1)
             {
-                selectSql = $"SELECT UserID, SessionCookie FROM Session WHERE UserID = '{userID}'";
+                selectSql = $"SELECT UserID, SessionID FROM Session WHERE UserID = '{userID}'";
                 using (SQLiteCommand cmd = new SQLiteCommand(selectSql, connection))
                 {
                     using (SQLiteDataReader reader = cmd.ExecuteReader())
                     {
                         if (reader.Read())
                         {
-                            string? sessionCookieValue = reader["SessionCookie"]?.ToString();
-                            if (!string.IsNullOrEmpty(sessionCookieValue))
+                            string? SessionIDValue = reader["SessionID"]?.ToString();
+                            if (!string.IsNullOrEmpty(SessionIDValue))
                             {
-                                SessionManager.InvalidateSession(sessionCookieValue);
+                                SessionManager.InvalidateSession(SessionIDValue);
                             }
                         }
                     }
                 }
             }
             // Jelszó ellenőrzése
-                selectSql = $"SELECT UserID, PasswordHash, PasswordSalt, Role FROM User WHERE Username = '{username}'";
+                selectSql = $"SELECT UserID, PasswordHash, PasswordSalt FROM User WHERE Username = '{username}'";
             using (SQLiteCommand cmd = new SQLiteCommand(selectSql, connection))
             {
                 using (SQLiteDataReader reader = cmd.ExecuteReader())
@@ -90,7 +88,6 @@ public class UserController : Controller
                     {
                         string? storedPasswordHash = reader["PasswordHash"].ToString();
                         string? storedSalt = reader["PasswordSalt"].ToString();
-                        role = reader["Role"].ToString();
 
                         if (!string.IsNullOrEmpty(storedPasswordHash) && !string.IsNullOrEmpty(storedSalt) &&
                             PasswordManager.Verify(password, storedSalt, storedPasswordHash))
@@ -111,9 +108,9 @@ public class UserController : Controller
         }
         // Itt már nincs megnyitva másik kapcsolat, mehet az írás
         SessionManager.InvalidateAllSessions(userID);
-        string sessionCookie = SessionManager.CreateSession(userID);
+        string SessionID = SessionManager.CreateSession(userID);
 
-        Response.Cookies.Append("id", sessionCookie, new CookieOptions
+        Response.Cookies.Append("id", SessionID, new CookieOptions
         {
             HttpOnly = true,
             Secure = true,
@@ -121,25 +118,25 @@ public class UserController : Controller
             Expires = DateTime.UtcNow.AddHours(1)
         });
 
-        return Ok(new { message = "Bejelentkezés sikeres!", role = role });
+        return Ok(new { message = "Bejelentkezés sikeres!"});
     }
 
     [HttpPost]
     public IActionResult Logout()
     {
-        var currentsessioncookie = Request.Cookies["id"];
-        if (string.IsNullOrEmpty(currentsessioncookie))
+        var currentSessionID = Request.Cookies["id"];
+        if (string.IsNullOrEmpty(currentSessionID))
         {
             return new UnauthorizedResult();
         }
-        SessionManager.InvalidateSession(currentsessioncookie);
+        SessionManager.InvalidateSession(currentSessionID);
         Response.Cookies.Delete("id");
         return Ok("Kijelentkezés sikeres!");
     }
 
-    static public bool IsLoggedIn(string SessionCookie)
+    static public bool IsLoggedIn(string SessionID)
     {
-        Int64 userID = SessionManager.GetUserID(SessionCookie);
+        Int64 userID = SessionManager.GetUserID(SessionID);
         return userID != -1;
     }
 
@@ -165,19 +162,18 @@ public class UserController : Controller
         var sessionId = Request.Cookies["id"];
         if (string.IsNullOrEmpty(sessionId))
         {
-            return Json(new { userID = -1, username = (string?)null, role = (string?)null });
+            return Json(new { userID = -1, username = (string?)null });
         }
         Int64 userID = SessionManager.GetUserID(sessionId);
         if (userID == -1)
         {
-            return Json(new { userID = -1, username = (string?)null, role = (string?)null });
+            return Json(new { userID = -1, username = (string?)null });
         }
 
-        string? role = null;
         string? username = null;
         using (var connection = DatabaseConnector.CreateNewConnection())
         {
-            string selectSql = "SELECT Role, Username FROM User WHERE UserID = @UserID";
+            string selectSql = "SELECT Username FROM User WHERE UserID = @UserID";
             using (var cmd = new SQLiteCommand(selectSql, connection))
             {
                 cmd.Parameters.AddWithValue("@UserID", userID);
@@ -185,13 +181,12 @@ public class UserController : Controller
                 {
                     if (reader.Read())
                     {
-                        role = reader["Role"].ToString();
                         username = reader["Username"].ToString();
                     }
                 }
             }
         }
 
-        return Json(new { userID, username, role });
+        return Json(new { userID, username });
     }
 }

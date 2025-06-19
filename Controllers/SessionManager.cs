@@ -7,35 +7,35 @@ public class SessionManager
     {
         using (SQLiteConnection connection = DatabaseConnector.CreateNewConnection())
         {
-            string sessionCookie;
+            string SessionID;
 
             do
             {
-                sessionCookie = Guid.NewGuid().ToString();
-            } while (SessionCookieExists(sessionCookie, connection));
+                SessionID = Guid.NewGuid().ToString();
+            } while (SessionIDExists(SessionID, connection));
 
             Int64 validUntil = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600;
 
-            string insertSql = "INSERT INTO Session (SessionCookie, UserID, ValidUntil, LoginTime) VALUES (@SessionCookie, @UserID, @ValidUntil, @LoginTime)";
+            string insertSql = "INSERT INTO Session (SessionID, UserID, ValidUntil, LoginTime) VALUES (@SessionID, @UserID, @ValidUntil, @LoginTime)";
             using (SQLiteCommand cmd = new SQLiteCommand(insertSql, connection))
             {
-                cmd.Parameters.AddWithValue("@SessionCookie", sessionCookie);
+                cmd.Parameters.AddWithValue("@SessionID", SessionID);
                 cmd.Parameters.AddWithValue("@UserID", UserID);
                 cmd.Parameters.AddWithValue("@ValidUntil", validUntil);
                 cmd.Parameters.AddWithValue("@LoginTime", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 cmd.ExecuteNonQuery();
             }
-            return sessionCookie;
+            return SessionID;
         }
     }
 
-    private static bool SessionCookieExists(string sessionCookie, SQLiteConnection connection)
+    private static bool SessionIDExists(string SessionID, SQLiteConnection connection)
     {
-        string selectSql = "SELECT COUNT(*) FROM Session WHERE SessionCookie = @SessionCookie";
+        string selectSql = "SELECT COUNT(*) FROM Session WHERE SessionID = @SessionID";
 
         using (SQLiteCommand cmd = new SQLiteCommand(selectSql, connection))
         {
-            cmd.Parameters.AddWithValue("@SessionCookie", sessionCookie);
+            cmd.Parameters.AddWithValue("@SessionID", SessionID);
 
             try
             {
@@ -66,29 +66,29 @@ public class SessionManager
         return "All sessions invalidated for UserID: " + UserID;
     }
 
-    public static string InvalidateSession(string SessionCookie)
+    public static string InvalidateSession(string SessionID)
     {
         using (SQLiteConnection connection = DatabaseConnector.CreateNewConnection())
         {
-            string deleteSql = "DELETE FROM Session WHERE SessionCookie = @SessionCookie";
+            string deleteSql = "DELETE FROM Session WHERE SessionID = @SessionID";
             using (SQLiteCommand cmd = new SQLiteCommand(deleteSql, connection))
             {
-                cmd.Parameters.AddWithValue("@SessionCookie", SessionCookie);
+                cmd.Parameters.AddWithValue("@SessionID", SessionID);
                 cmd.ExecuteNonQuery();
             }
         }
-        return "Session invalidated for SessionCookie: " + SessionCookie;
+        return "Session invalidated for SessionID: " + SessionID;
     }
 
-    public static Int64 GetUserID(string? SessionCookie)
+    public static Int64 GetUserID(string? SessionID)
     {
         using (SQLiteConnection connection = DatabaseConnector.CreateNewConnection())
         {
-            string selectSql = "SELECT UserID FROM Session WHERE SessionCookie = @SessionCookie AND ValidUntil > @CurrentTime";
+            string selectSql = "SELECT UserID FROM Session WHERE SessionID = @SessionID AND ValidUntil > @CurrentTime";
 
             using (SQLiteCommand cmd = new SQLiteCommand(selectSql, connection))
             {
-                cmd.Parameters.AddWithValue("@SessionCookie", SessionCookie);
+                cmd.Parameters.AddWithValue("@SessionID", SessionID);
                 cmd.Parameters.AddWithValue("@CurrentTime", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
 
                 try
